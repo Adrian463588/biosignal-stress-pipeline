@@ -11,16 +11,16 @@ configs/             canonical Python pipeline configuration
 tests/               Python pipeline tests
 ```
 
-Run from the repository root:
+Run from the repository root with one UTC run ID:
 
-```powershell
-python -m PipelinePython data --run-id 20260821T120000Z
-python -m PipelinePython peaks --run-id 20260821T120000Z --resume
-python -m PipelinePython stress-onnx --run-id 20260821T120000Z --sensor ppg_green --resume
-python -m PipelinePython all --run-id 20260821T120000Z --resume
-```
+    $RunId = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    python -m PipelinePython data --run-id $RunId --resume
+    python -m PipelinePython peaks --run-id $RunId --resume
+    python -m PipelinePython stress-onnx --run-id $RunId --sensor ppg_green --export-mode research --resume
+
+Use python -m PipelinePython all --run-id $RunId --resume --export-mode research for the complete graph. Train each PPG channel independently. Use --smoke to stop before training and export.
 
 Raw data, generated artifacts, reports, and Android source remain outside this
-folder. The legacy `ColabVersion` notebooks are retained under
-`03_stress_onnx/notebooks/legacy`; only the generated canonical notebook at
-`03_stress_onnx/notebooks/BiosignalStressTraining_Colab.ipynb` is active.
+folder. Only the canonical handoff notebook at
+03_stress_onnx/notebooks/BiosignalStressTraining_Colab.ipynb is included. Legacy
+notebooks and their execution outputs are not published.

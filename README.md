@@ -17,18 +17,17 @@ This repository contains the local Python pipeline for ECG/PPG data preparation,
 
 Read [PRD.md](PRD.md), [AGENTS.md](AGENTS.md), and the pipeline spec under `_bmad-output/specs/spec-local-biosignal-pipeline/` before changing data contracts or model gates.
 
-## Pipeline
+## Pipeline stages
 
-```text
-local ECG + PPG
-  -> raw audit and manifest
-  -> ECG clock correction, cleaning, MADC, and SQA
-  -> Silver and Gold preparation
-  -> ECG/PPG peak and IBI agreement validation
-  -> participant-safe channel-specific ML
-  -> conditional Colab T4 handoff when required
-  -> gated ONNX export and parity evidence
-```
+| Stage | Canonical implementation and config | Contract |
+| --- | --- | --- |
+| Raw audit and alignment | PipelinePython/common/ingestion.py, PipelinePython/common/raw_sync.py, PipelinePython/common/alignment.py; PipelinePython/configs/data.yaml, PipelinePython/configs/synchronization.yaml | Audit immutable ECG/PPG inputs and lineage. Correct ECG clock offset or drift against anchors before segmentation. |
+| Cleaning and preparation | PipelinePython/common/preprocessing.py, PipelinePython/common/madc.py, PipelinePython/common/sqa.py, PipelinePython/common/workflows/data_preparation.py; PipelinePython/configs/cleaning.yaml, PipelinePython/configs/madc.yaml, PipelinePython/configs/sqa.yaml | Create cleaned Silver and quality-gated Gold without padding long gaps or replacing raw input. |
+| Peak and HRV-PRV validation | PipelinePython/common/peak_detection.py, PipelinePython/common/synced_peak_validation.py, PipelinePython/common/hrv_agreement.py; PipelinePython/configs/peak_detection.yaml, PipelinePython/configs/hrv_agreement.yaml | Detect ECG R-peaks and each PPG channel independently. ECG RR intervals provide the HRV reference; PPG pulse-to-pulse intervals provide PRV. Beat matching preserves physiological delay and compares adjacent intervals, not zero-lag peak timestamps. The report contract emits 192 participant, phase, and channel rows, including exclusions. |
+| Model development | PipelinePython/common/training_canonical.py, PipelinePython/common/training_protocol.py, PipelinePython/common/workflows/stress_onnx.py; PipelinePython/configs/training.yaml, PipelinePython/configs/features.yaml, PipelinePython/configs/frozen_gates.yaml | Train separate Green, IR, and Red PPG models with participant-safe folds. ECG and PAT are validation evidence, never model predictors. |
+| ONNX and parity | PipelinePython/common/export_onnx.py, PipelinePython/common/export/model_validator.py, PipelinePython/common/onnx_v3.py; PipelinePython/configs/onnx.yaml, PipelinePython/configs/android.yaml | Export only a gate-qualified model; check ONNX Runtime and FP32 max_abs_diff below 1e-5, then produce the manifest and vectors for Android parity. |
+
+Read Run the pipeline below for the resumable commands. Do not run publish-internal until model, features, quality cohort, calibration, and threshold choices are frozen; it evaluates the reused internal cohort once.
 
 ## Repository layout
 
