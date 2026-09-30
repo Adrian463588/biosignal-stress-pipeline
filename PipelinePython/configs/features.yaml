@@ -1,0 +1,86 @@
+preprocessing:
+  zero_phase: true
+  madc_window_seconds: 1.0
+  madc_threshold: 6.0
+  ecg:
+    lowcut_hz: 0.5
+    highcut_hz: 40.0
+    order: 4
+  ppg_ir:
+    lowcut_hz: 0.5
+    highcut_hz: 8.0
+    order: 4
+  ppg_red:
+    lowcut_hz: 0.5
+    highcut_hz: 8.0
+    order: 4
+  ppg_green:
+    lowcut_hz: 0.5
+    highcut_hz: 5.0
+    order: 4
+feature_contract_version: ppg-v4-robust-independent
+predictor_default:
+  - median_hr_bpm
+  - ppi_median_ms
+  - ppi_iqr_ms
+  - ppi_cv
+  - rmssd_ms
+  - sdnn_ms
+  - pnn50
+  - pulse_amplitude_cv
+  - normalized_pulse_amplitude_median
+  - pulse_width_half_height_median_ms
+  - rise_time_median_ms
+  - decay_time_median_ms
+  - normalized_pulse_area_median
+  - normalized_rise_slope_median
+  - normalized_decay_slope_median
+experimental_only:
+  - sd1_ms
+  - sd2_ms
+  - sample_entropy
+  - waveform_skewness
+  - waveform_kurtosis
+  - log_lf_power
+  - log_hf_power
+  - lf_hf_ratio
+promoted_experimental: []
+quality_gate_only:
+  - peak_count
+  - physiological_ibi_ratio
+  - valid_peak_ratio
+  - signal_quality_index
+  - missing_ratio
+  - interpolated_fraction
+  - artifact_ratio
+  - clipping_ratio
+  - flatline_ratio
+  - motion_score
+  - sampling_jitter
+  - quality_tier
+  - quality_flags
+forbidden_metadata:
+  - participant_id
+  - participant_code
+  - session_id
+  - recording_id
+  - phase
+  - label
+  - label_name
+  - source_file
+  - source_path
+  - source_checksum
+  - timestamp
+  - window_id
+  - window_index
+  - window_start_utc
+  - window_end_utc
+  - source_rate_hz
+  - model_rate_hz
+  - sampling_rate_hz
+  - sensor_channel
+  - split
+correlation_pruning:
+  absolute_threshold: 0.95
+  preference_order: predictor_default
+non_finite_policy: reject_window

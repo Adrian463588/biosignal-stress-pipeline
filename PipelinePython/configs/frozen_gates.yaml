@@ -1,0 +1,17 @@
+# frozen_gates.yaml
+# Protected configuration for hard performance gates.
+# Changes to these values require an approved Architecture Decision Record (ADR).
+# DO NOT edit these values to make a failing model pass.
+
+performance_policy:
+  # Governed by the current PRD/AGENTS contract. These are release gates,
+  # never tuning knobs.
+  version: ml_dl_tiered_v1
+  minimum_research:
+    balanced_accuracy: 0.70
+    f1: 0.70
+    roc_auc: 0.70
+  preferred:
+    balanced_accuracy: 0.80
+    f1: 0.78
+    roc_auc: 0.83

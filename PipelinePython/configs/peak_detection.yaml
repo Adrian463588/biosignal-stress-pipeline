@@ -1,0 +1,50 @@
+schema_version: ppg-peak-detection-v4
+primary_method: neurokit2_ppg_elgendi
+fallback_method: scipy_find_peaks
+allow_runtime_fallback: false
+candidate_methods:
+  - neurokit2_ppg_elgendi
+  - neurokit2_ppg_bishop
+  - neurokit2_ppg_charlton_msptdfast
+  - scipy_find_peaks_adaptive
+  - scipy_legacy_green_native
+minimum_peak_count: 15
+physiological_ibi_min_ms: 300.0
+physiological_ibi_max_ms: 1500.0
+minimum_physiological_ibi_ratio: 0.90
+audit_prominence_mad_multipliers: [0.40, 0.60, 0.80, 1.00]
+selection_participants: ID-01..ID-28
+selection_order:
+  - hrv_development_evidence_status_desc
+  - hrv_minimum_composite_desc
+  - hrv_mean_composite_desc
+  - hrv_valid_development_rows_desc
+  - hrv_fold_minimum_composite_desc
+  - detector_complexity_asc
+selection_run_id: 20260829T122727Z
+selection_artifact: data/artifacts/runs/20260829T122727Z/validation/detector_selection/detector_selection.json
+width_ablation_enabled: false
+legacy_native:
+  provenance: DATA PPG 31-participant Green detector; segment-local observed-sample ablation
+  prominence_std_multiplier: 0.25
+  height_std_multiplier: 0.20
+  min_distance_seconds: 0.3333333333333333
+  edge_margin_seconds: 0.50
+  segment_seconds: 30.0
+  retry_prominence_scale: 0.30
+channels:
+  ppg_green:
+    selected_method: neurokit2_ppg_charlton_msptdfast
+    min_distance_seconds: 0.30
+    prominence_mad_multiplier: 0.40
+    min_width_seconds: 0.0
+  ppg_ir:
+    selected_method: scipy_find_peaks_adaptive
+    min_distance_seconds: 0.30
+    prominence_mad_multiplier: 0.40
+    min_width_seconds: 0.0
+  ppg_red:
+    selected_method: neurokit2_ppg_elgendi
+    min_distance_seconds: 0.30
+    prominence_mad_multiplier: 0.40
+    min_width_seconds: 0.0

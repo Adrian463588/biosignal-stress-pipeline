@@ -1,0 +1,43 @@
+# cleaning.yaml — Bandpass filter configuration per sensor channel.
+# Verified against actual sampling rates from raw data:
+#   ECG Polar H10 ≈ 130 Hz → Nyquist 65 Hz, bandpass 0.5–40 Hz OK
+#   PPG IR/Red Galaxy Watch 5 ≈ 100 Hz → Nyquist 50 Hz, bandpass 0.5–8 Hz OK
+#   PPG Green Galaxy Watch 5 ≈ 25 Hz → Nyquist 12.5 Hz, bandpass 0.5–5 Hz OK
+ecg:
+  lowcut_hz: 0.5
+  highcut_hz: 40.0
+  order: 4
+  filter_type: butterworth
+  zero_phase: true
+
+ppg_ir:
+  lowcut_hz: 0.5
+  highcut_hz: 8.0
+  order: 4
+  filter_type: butterworth
+  zero_phase: true
+
+ppg_red:
+  lowcut_hz: 0.5
+  highcut_hz: 8.0
+  order: 4
+  filter_type: butterworth
+  zero_phase: true
+
+ppg_green:
+  lowcut_hz: 0.5
+  highcut_hz: 5.0
+  order: 4
+  filter_type: butterworth
+  zero_phase: true
+
+# General cleaning rules
+duplicate_removal: exact
+nan_handling: bounded_internal_only
+max_interpolation_seconds: 0.5
+interpolation_method: linear
+pchip_min_neighbors_each_side: 2
+gap_threshold_seconds: 0.5
+interpolate_edges: false
+interpolate_across_phase: false
+filter_application: once_per_channel

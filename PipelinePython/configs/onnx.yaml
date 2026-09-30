@@ -1,0 +1,13 @@
+export_version: onnx-v1.0.0
+opset: 17
+static_batch_size: 1
+input_name: float_input
+output_name: stress_probability
+min_parity_samples: 100
+max_abs_diff: 1.0e-5
+max_model_size_bytes: 2097152
+max_batch1_latency_ms: 1.0
+int8:
+  enabled_after_fp32: true
+  max_abs_diff: 0.01
+  max_accuracy_drop: 0.02

@@ -1,0 +1,27 @@
+# The active local pipeline is the code under ``PipelinePython`` and its
+# regression suite under ``PipelinePython/tests``. Colab exports, copied
+# experiment folders, and the
+# legacy Android/data snapshots are migration references, not release-path
+# Python sources, so they are deliberately outside the active lint boundary.
+extend-exclude = [
+    ".agents",
+    ".github",
+    ".kiro",
+    "_bmad",
+    "_bmad-output",
+    "android",
+    "build",
+    "PipelinePython/03_stress_onnx/notebooks/legacy",
+    "PipelinePython/03_stress_onnx/notebooks",
+    "PipelinePython/03_stress_onnx/tools/legacy",
+    "PipelinePython/configs",
+    "DATA PPG-20260609T013317Z-3-001",
+    "OMEN",
+    "PRD_Legacy",
+    "scratch",
+    "scripts",
+    "skills",
+    "fix_training_dl.py",
+    "patch_v5.py",
+    "Template.ipynb",
+]

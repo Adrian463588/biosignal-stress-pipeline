@@ -1,0 +1,5 @@
+# CI-only tools. Runtime/scientific dependencies remain in requirements-lock.txt.
+-r requirements-lock.txt
+mypy==1.18.2
+# Install from the official CPU wheel index in CI to avoid CUDA packages.
+torch==2.6.0

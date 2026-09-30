@@ -1,0 +1,32 @@
+training_quality_tiers: [excellent, good, acceptable]
+quality_policy_version: ppg_lightweight_v2_acceptable_training
+neurokit_quality_hard_gate: false
+neurokit_quality_diagnostic: false
+motion_annotation_only: true
+flatline_std_max: 1.0e-9
+clip_ratio_max: 0.20
+missing_ratio_max: 0.10
+timestamp_gap_ratio_max: 0.05
+sampling_jitter_cv_max: 0.10
+amplitude_jump_z_max: 12.0
+artifact_ratio_max: 0.20
+minimum_samples: 10
+morphology_min_valid_ratio: 0.75
+morphology_max_amplitude_cv: 1.50
+# Candidate only. The validator promotes diagnostic morphology after a complete
+# ID-01..ID-28 ablation passes every non-inferiority threshold below.
+morphology_policy: diagnostic
+morphology_ablation_max_f1_drop: 0.01
+morphology_ablation_max_ibi_mae_increase_ms: 5.0
+morphology_ablation_max_hr_mae_increase_bpm: 0.5
+# The multiplicative morphology score is diagnostic only. Hard gating uses
+# the explicit valid-ratio, amplitude-CV, and template-correlation components.
+morphology_score_diagnostic_threshold: 0.60
+morphology_template_corr_min: 0.60
+motion_heavy_exclusion: true
+motion_unavailable_policy: annotate_only
+tiers:
+  excellent: 0.95
+  good: 0.80
+  acceptable: 0.60
+  poor: 0.40

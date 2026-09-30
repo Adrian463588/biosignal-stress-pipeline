@@ -1,0 +1,169 @@
+# Historical hosted workflow retained for audit only.
+# Disabled and superseded by ADR-013 and scripts/run_full_pipeline.ps1.
+name: Historical Validation Gate and Release Evidence
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    name: Governance and fail-closed scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify exact gate and ADR-aware gate-file diff
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python scripts/ci/check_frozen_gate.py --base-ref "origin/${{ github.base_ref }}"
+          else
+            python scripts/ci/check_frozen_gate.py
+          fi
+      - name: Reject fake clinical behavior in active production sources
+        run: python scripts/ci/scan_android_production_fakes.py
+
+  python_quality:
+    name: Python Ruff and typed critical boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Install locked dependencies and CPU Torch
+        run: |
+          python -m pip install --upgrade pip
+          pip install --requirement requirements-lock.txt
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0
+          pip install mypy==1.18.2
+      - name: Ruff
+        run: ruff check src tests scripts/ci
+      - name: MyPy safety-critical boundary
+        run: >-
+          mypy --ignore-missing-imports --follow-imports=skip
+          PipelinePython/common/config.py
+          PipelinePython/common/export_onnx_dl.py
+          PipelinePython/common/cv/leakage.py
+          PipelinePython/common/cv/fold_validator.py
+
+  python_critical_tests:
+    name: Leakage, split, gate, export, and parity tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Install locked dependencies and CPU Torch
+        run: |
+          python -m pip install --upgrade pip
+          pip install --requirement requirements-lock.txt
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0
+      - name: Run critical regression suite
+        run: >-
+          pytest -v
+          tests/test_validation.py
+          tests/test_augmentation.py
+          tests/test_leakage.py
+          tests/test_fold_validator.py
+          tests/test_dl_evaluation_safety.py
+          tests/test_onnx_export.py
+          tests/parity/test_onnx_parity.py
+          tests/integration/test_pipeline_gate.py
+      - name: Validate accepted model index, hashes, and ONNX graphs
+        run: python scripts/ci/validate_model_index.py
+
+  python_full_tests:
+    name: Full Python suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Install locked dependencies and CPU Torch
+        run: |
+          python -m pip install --upgrade pip
+          pip install --requirement requirements-lock.txt
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0
+      - run: pytest -v tests
+
+  android_host:
+    name: Android active modules compile and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify Gradle wrapper checksum
+        uses: gradle/actions/wrapper-validation@v4
+      - name: Compile active modules and run host unit tests
+        working-directory: android
+        run: >-
+          ./gradlew --no-daemon
+          :shared:test
+          :inference:testDebugUnitTest
+          :mobile:testDebugUnitTest
+          :wear:testDebugUnitTest
+          :mobile:verifyNoLegacyModelAssets
+          :mobile:assembleDebug
+          :wear:assembleDebug
+
+  release_evidence:
+    name: Truthful release evidence snapshot
+    if: always()
+    needs: [governance, python_quality, python_critical_tests, python_full_tests, android_host]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate host evidence with missing external gates pending
+        run: python scripts/ci/generate_release_evidence.py --output-dir build/release-evidence
+      - name: Record upstream CI results without converting them to evidence passes
+        shell: bash
+        run: |
+          cat > build/release-evidence/ci_jobs.json <<EOF
+          {
+            "governance": "${{ needs.governance.result }}",
+            "python_quality": "${{ needs.python_quality.result }}",
+            "python_critical_tests": "${{ needs.python_critical_tests.result }}",
+            "python_full_tests": "${{ needs.python_full_tests.result }}",
+            "android_host": "${{ needs.android_host.result }}"
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: build/release-evidence
+          if-no-files-found: error
+          retention-days: 30

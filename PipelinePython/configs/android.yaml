@@ -1,0 +1,9 @@
+valid_vector_count: 94
+edge_vector_count: 6
+invalid_quality_tiers: [poor, invalid]
+deployable_sensors: [ppg_green, ppg_ir, ppg_red]
+channel_priority: [ppg_green, ppg_ir, ppg_red]
+require_physical_device: true
+module: inference
+asset_dir: android/inference/src/main/assets/model
+test_vector_path: tests/fixtures/android_parity/test_vectors.json

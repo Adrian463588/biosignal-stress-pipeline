@@ -1,0 +1,43 @@
+versions:
+  preprocessing: v3.1.0
+  features: v4.0.0_robust_channel_independent
+  model: stress_v4.0.0-core240s
+timezone_local: Asia/Jakarta
+random_seed: 42
+raw_source:
+  renamed_dir: data/raw/DataRenamedPartisipan
+  trimmed_dir: data/raw/DataTrimmedPartisipan
+  ecg_source: renamed_complete
+  ppg_source: trimmed_phase
+  trimmed_ecg_role: audit_only
+  anchor_csv: TimeStampAnchor/participants_2026-05-03_22-47_WIB.csv
+  participant_count: 32
+window:
+  source_phase_duration_seconds: 300
+  edge_trim_start_seconds: 30
+  edge_trim_end_seconds: 30
+  analysis_phase_duration_seconds: 240
+  validation_window_seconds: 240
+  gold_window_seconds: 180
+  gold_stride_seconds: 10
+  size_seconds: 180
+  step_seconds: 10
+  validation_buffer_seconds: 0
+  gold_buffer_seconds: 0
+  # Deprecated; canonical slicing ignores this field.
+  anchor_buffer_seconds: 0
+  ibi_sequence_length: 720
+artifacts:
+  bronze_dir: data/bronze
+  sync_dir: data/sync
+  silver_dir: data/silver
+  gold_dir: data/gold
+  gold_features: data/gold/gold_features_v3.parquet
+  gold_ibi_sequences: data/gold/gold_ibi_sequences_v3.parquet
+  manifest: data/gold/manifest_v3.json
+  reports_dir: reports
+  # PipelinePaths.models_dir is the domain root; trainers add the `stress/`
+  # namespace exactly once. Keeping it here avoids `.../stress/stress/...`.
+  models_dir: data/artifacts/models
+  export_dir: data/artifacts/export
+  mlflow_dir: data/artifacts/mlflow

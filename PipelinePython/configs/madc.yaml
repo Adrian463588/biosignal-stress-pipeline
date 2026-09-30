@@ -1,0 +1,12 @@
+# Accelerometer units are not assumed to be SI-calibrated.  Scores are
+# normalized robustly within each recording/window and are annotations only.
+# A physical-time window keeps Green (about 25 Hz) and IR/Red (about 100 Hz)
+# comparable without assuming either nominal rate at runtime.
+window_seconds: 2.0
+robust_z_threshold: 6.0
+heavy_motion_threshold: 0.8
+reject_ratio_threshold: 0.3
+light_motion_threshold: 0.2
+accelerometer_scale_status: uncalibrated
+interpolation_in_madc: false
+adaptive_filter: false

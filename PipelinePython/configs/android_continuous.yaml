@@ -1,0 +1,41 @@
+versions:
+  preprocessing: v3.1.0_continuous25_ir100
+  features: v3.1.0_180s_continuous25_ir100
+  model: stress_v4.1.0-continuous25-ir100
+
+timezone_local: Asia/Jakarta
+random_seed: 42
+
+raw_source:
+  renamed_dir: data/raw/DataRenamedPartisipan
+  trimmed_dir: data/raw/DataTrimmedPartisipan
+  ecg_source: renamed_complete
+  ppg_source: trimmed_phase
+  trimmed_ecg_role: audit_only
+  anchor_csv: TimeStampAnchor/participants_2026-05-03_22-47_WIB.csv
+  participant_count: 32
+
+window:
+  source_phase_duration_seconds: 300
+  edge_trim_start_seconds: 30
+  edge_trim_end_seconds: 30
+  analysis_phase_duration_seconds: 240
+  validation_window_seconds: 240
+  gold_window_seconds: 180
+  gold_stride_seconds: 10
+  validation_buffer_seconds: 0
+  gold_buffer_seconds: 0
+  anchor_buffer_seconds: 0
+  ibi_sequence_length: 720
+
+artifacts:
+  bronze_dir: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/bronze
+  sync_dir: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/sync
+  silver_dir: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/silver
+  gold_dir: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/gold
+  gold_features: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/gold/gold_features.parquet
+  gold_ibi_sequences: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/gold/gold_ibi_sequences.parquet
+  manifest: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/gold/manifest.json
+  reports_dir: reports/model_eval/stress_v4.1.0-continuous25-ir100
+  models_dir: data/artifacts/runs/stress_v4.1.0-continuous25-ir100/models
+  export_dir: data/artifacts/export/stress_v4.1.0-continuous25-ir100

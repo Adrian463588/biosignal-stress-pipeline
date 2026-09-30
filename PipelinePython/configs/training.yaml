@@ -1,0 +1,82 @@
+random_seed: 42
+ml_execution: local
+training_channels: [ppg_green, ppg_ir, ppg_red]
+candidate_order: [logistic_regression, rbf_svm, extra_trees, lightgbm, xgboost]
+gate_metric: balanced_accuracy
+# Two-tier policy. Accuracy remains report-only.
+performance_policy_version: ml_dl_tiered_v1
+minimum_research_balanced_accuracy: 0.70
+minimum_research_f1: 0.70
+minimum_research_roc_auc: 0.70
+preferred_balanced_accuracy: 0.80
+preferred_f1: 0.78
+preferred_roc_auc: 0.83
+research_disclaimer: "Model penelitian — validasi internal terbatas. Bukan diagnosis klinis."
+# Deprecated aliases retain the historical preferred tier. New code must
+# consume the explicit tiered keys above for minimum-gate classification.
+min_balanced_accuracy: 0.80
+development_participants: 28
+parity_pool_participants: 4
+development_participant_ids: [ID-01, ID-02, ID-03, ID-04, ID-05, ID-06, ID-07, ID-08, ID-09, ID-10, ID-11, ID-12, ID-13, ID-14, ID-15, ID-16, ID-17, ID-18, ID-19, ID-20, ID-21, ID-22, ID-23, ID-24, ID-25, ID-26, ID-27, ID-28]
+parity_pool_participant_ids: [ID-29, ID-30, ID-31, ID-32]
+reused_test_cohort_status: reused_internal_test_cohort
+clinical_validation_status: external_validation_required
+inner_group_splits: 5
+outer_group_splits: 7
+outer_fold_size: 4
+# Admission gate for the 56 development participant-phase groups per channel.
+minimum_training_development_group_coverage: 0.90
+# Quality exclusions remain explicit; no missing participant-phase is imputed.
+minimum_development_groups_per_phase: 23
+# ceil(0.90 * 28 development participants).
+minimum_development_participants: 26
+hpo_top_candidates: 2
+optuna_trials: 50
+optuna_sampler: tpe
+optuna_storage_uri: sqlite:///data/artifacts/optuna/training.db
+probability_calibration: sigmoid
+correlation_pruning_threshold: 0.95
+min_f1: 0.78
+min_roc_auc: 0.83
+decision_threshold: 0.5
+allowed_quality_tiers: [excellent, good, acceptable]
+strict_quality_tiers: [excellent, good]
+expanded_quality_tiers: [excellent, good, acceptable]
+quality_cohort_tie_tolerance: 0.01
+quality_policy_version: ppg_lightweight_v2_acceptable_training
+mlflow_tracking_uri: sqlite:///data/artifacts/mlflow/mlflow.db
+window_baseline_seconds: 180
+window_baseline_stride_seconds: 10
+window_minimum_ba_gain: 0.02
+window_candidates:
+  - {window_seconds: 60, stride_seconds: 30}
+  - {window_seconds: 120, stride_seconds: 30}
+  - {window_seconds: 180, stride_seconds: 10}
+  - {window_seconds: 180, stride_seconds: 30}
+  - {window_seconds: 240, stride_seconds: 240}
+
+# Development ablation only. Canonical preprocessing, peak validation, Gold,
+# validation folds, and reused internal test never call this policy.
+augmentation:
+  enabled: false
+  dataset_role: train
+  participant_ids_source: development_participant_ids
+  seed: 42
+  multiplier: 1
+  provenance_required: true
+  canonical_allowlist:
+    amplitude_scaling: {scale_min: 0.8, scale_max: 1.2}
+    gaussian_noise: {min_snr_db: 20.0, max_snr_db: 30.0}
+  contextual_candidates:
+    edge_safe_crop_shift:
+      enabled: false
+      status: unavailable_until_phase_context_wired
+      max_shift_samples: 10
+      required_context: [phase_signal, observed_mask, phase_bounds, window_bounds]
+  forbidden_default:
+    - baseline_wander
+    - time_cutmix
+    - time_reversal
+    - amplitude_inversion
+    - aggressive_magnitude_warping
+    - aggressive_time_warping
