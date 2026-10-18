@@ -43,8 +43,8 @@ from pathlib import Path
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Root directory that contains one sub-folder per participant
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# Root directory that contains one sub-folder per participant (ProsesData project root)
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # List of raw data folders to process together for global sorting
 DATA_ROOTS: list[Path] = [
@@ -57,6 +57,11 @@ DATA_ROOTS: list[Path] = [
 
 # Destination root: renamed folders will be written here
 OUTPUT_ROOT: Path = PROJECT_ROOT / "data" / "raw" / "DataRenamedPartisipan"
+
+# Personality anchor CSV to anonymize
+PERSONALITY_ANCHOR_CSV: Path = (
+    PROJECT_ROOT / "PersonalityAnchor" / "all_participants_results.csv"
+)
 
 # Conditions sub-folders to search for PPG files
 CONDITIONS = ("Relaks", "Stress")
@@ -212,8 +217,14 @@ class Renamer:
     name prefix with the new ID prefix.
     """
 
-    def __init__(self, output_root: Path = OUTPUT_ROOT, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        output_root: Path = OUTPUT_ROOT,
+        personality_csv: Path | None = PERSONALITY_ANCHOR_CSV,
+        dry_run: bool = False,
+    ) -> None:
         self._output_root = output_root
+        self._personality_csv = personality_csv
         self._dry_run = dry_run
 
     def rename_all(self, participants: list[ParticipantInfo]) -> None:
@@ -225,6 +236,13 @@ class Renamer:
             self._rename_participant(info)
 
         self._write_mapping(participants)
+
+        if self._personality_csv and self._personality_csv.exists():
+            anonymize_personality_anchor(
+                self._personality_csv,
+                participants=participants,
+                dry_run=self._dry_run,
+            )
 
     # ------------------------------------------------------------------
     # Private
@@ -339,6 +357,105 @@ class Renamer:
         logger.info("Mapping written to: %s", mapping_path)
 
 
+def anonymize_personality_anchor(
+    csv_path: Path = PERSONALITY_ANCHOR_CSV,
+    participants: list[ParticipantInfo] | None = None,
+    dry_run: bool = False,
+) -> int:
+    """
+    Anonymize participant names in PersonalityAnchor/all_participants_results.csv.
+    Replaces real names (e.g. 'Guntur Sulistyo') with canonical 'ID-XX' (e.g. 'ID-32').
+    Strips trailing empty comma lines.
+    """
+    if not csv_path.exists():
+        logger.warning("Personality anchor CSV does not exist: %s", csv_path)
+        return 0
+
+    with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+        reader = list(csv.reader(f))
+
+    if not reader:
+        logger.warning("Personality anchor CSV is empty: %s", csv_path)
+        return 0
+
+    header = reader[0]
+    data_rows = reader[1:]
+
+    # Build name-to-ID lookup
+    name_to_id: dict[str, str] = {}
+    if participants:
+        for p in participants:
+            clean = re.sub(r"[^a-zA-Z]", "", p.original_name).lower()
+            if clean:
+                name_to_id[clean] = p.participant_id
+    else:
+        map_path = OUTPUT_ROOT / "mapping.csv"
+        if map_path.exists():
+            with open(map_path, "r", encoding="utf-8") as mf:
+                for row in csv.DictReader(mf):
+                    clean = re.sub(r"[^a-zA-Z]", "", row["original_name"]).lower()
+                    if clean:
+                        name_to_id[clean] = row["participant_id"]
+
+    updated_count = 0
+    cleaned_rows = []
+
+    for idx, row in enumerate(data_rows, start=1):
+        if not row or not any(field.strip() for field in row):
+            continue
+        pid_field = row[0].strip()
+        if not pid_field:
+            continue
+
+        new_pid = pid_field
+        if not re.match(r"^ID-\d{2}$", pid_field):
+            clean_field = re.sub(r"[^a-zA-Z]", "", pid_field).lower()
+            matched = None
+            for key, assigned_id in name_to_id.items():
+                if key in clean_field or clean_field in key:
+                    matched = assigned_id
+                    break
+            if not matched and "guntur" in clean_field:
+                matched = "ID-32"
+            elif not matched:
+                matched = f"ID-{idx:02d}"
+
+            new_pid = matched
+            action = "[DRY-RUN] Would rename" if dry_run else "Renaming"
+            logger.info(
+                "%s in %s: '%s' -> '%s'",
+                action,
+                csv_path.name,
+                pid_field,
+                new_pid,
+            )
+            updated_count += 1
+
+        row[0] = new_pid
+        cleaned_rows.append(row)
+
+    if not dry_run and updated_count > 0:
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(cleaned_rows)
+        logger.info(
+            "Updated %s: anonymized %d record(s), total %d valid records.",
+            csv_path,
+            updated_count,
+            len(cleaned_rows),
+        )
+    elif dry_run and updated_count > 0:
+        logger.info(
+            "[DRY-RUN] Would update %s: %d record(s) to anonymize, %d valid records.",
+            csv_path.name,
+            updated_count,
+            len(cleaned_rows),
+        )
+
+    return updated_count
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -370,11 +487,30 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=OUTPUT_ROOT,
         help=f"Override the output directory. Default: {OUTPUT_ROOT}",
     )
+    parser.add_argument(
+        "--personality-anchor",
+        type=Path,
+        default=PERSONALITY_ANCHOR_CSV,
+        help=f"Path to personality anchor CSV. Default: {PERSONALITY_ANCHOR_CSV}",
+    )
+    parser.add_argument(
+        "--personality-only",
+        action="store_true",
+        help="Only anonymize personality anchor without copying/renaming participant data directories.",
+    )
     return parser
 
 
 def main() -> None:
     args = _build_arg_parser().parse_args()
+
+    if args.personality_only:
+        anonymize_personality_anchor(
+            csv_path=args.personality_anchor,
+            participants=None,
+            dry_run=args.dry_run,
+        )
+        return
 
     start_id = 1
     discovery = ParticipantDiscovery(data_roots=args.data_roots)
@@ -395,7 +531,11 @@ def main() -> None:
             else "unknown",
         )
 
-    renamer = Renamer(output_root=args.output_root, dry_run=args.dry_run)
+    renamer = Renamer(
+        output_root=args.output_root,
+        personality_csv=args.personality_anchor,
+        dry_run=args.dry_run,
+    )
     renamer.rename_all(participants)
 
     if args.dry_run:

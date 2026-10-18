@@ -81,7 +81,15 @@ class PersonalityLabelResolver:
         }
         df["dominant_trait_label"] = df["dominant_trait"].map(trait_to_label)
 
-        return df[["Name", "dominant_trait", "dominant_trait_label"]].copy()
+        id_col = (
+            "Name"
+            if "Name" in df.columns
+            else ("Participant ID" if "Participant ID" in df.columns else df.columns[0])
+        )
+        res = df[[id_col, "dominant_trait", "dominant_trait_label"]].copy()
+        if id_col != "Name":
+            res = res.rename(columns={id_col: "Name"})
+        return res
 
     def resolve_name_to_code(self, name: str, gold_df: pd.DataFrame) -> str | None:
         """
@@ -384,6 +392,12 @@ class PersonalityModelTrainer:
         code_to_trait = {}
 
         for code in unique_codes:
+            # Check direct match if Name already contains participant code (e.g. ID-XX)
+            direct_match = personality_df[personality_df["Name"] == code]
+            if not direct_match.empty:
+                code_to_trait[code] = direct_match.iloc[0]["dominant_trait_label"]
+                continue
+
             # Fallback to the code itself if no mapping is found
             clean_orig = id_to_orig.get(code, str(code).lower())
             if not clean_orig:

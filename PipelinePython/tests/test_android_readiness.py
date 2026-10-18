@@ -8,10 +8,44 @@ import pytest
 from PipelinePython.common.android_readiness import (
     _aggregate_research_status,
     _production_status,
+    _sensor_path_receipt,
     evaluate_android_readiness,
     evaluate_internal_android_readiness,
 )
 from PipelinePython.common.cli import _parse_args
+
+
+@pytest.mark.parametrize(
+    "schema,cleaned", [("live-ppg-parity-v2", True), ("live-ppg-parity-v3", False)]
+)
+def test_sensor_receipt_requires_independent_canonical_preprocessing(
+    tmp_path: Path, schema: str, cleaned: bool
+) -> None:
+    run_root = tmp_path / "20260916T132736Z"
+    target = (
+        run_root
+        / "export/internal/device_parity/sensor_path/live_ppg_sensor_parity_receipt.json"
+    )
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        json.dumps(
+            {
+                "schema_version": schema,
+                "run_id": run_root.name,
+                "status": "GO",
+                "sensor_path_parity_status": "GO",
+                "actual_sensor_acquisition": True,
+                "raw_lineage_verified": True,
+                "preprocessing_verified": cleaned,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt = _sensor_path_receipt(run_root)
+
+    assert receipt["status"] != "GO"
+    assert receipt["actual_sensor_acquisition"] is False
 
 
 def _research_index(

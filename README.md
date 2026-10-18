@@ -53,10 +53,19 @@ cd biosignal-stress-pipeline
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install -r requirements-lock.txt
+python -m pip install -e . --no-deps
 ```
 
 On macOS or Linux, activate the environment with `source .venv/bin/activate`.
+
+Enable the local pre-push publication check once per clone:
+
+```powershell
+git config --local core.hooksPath .githooks
+```
+
+The hook audits candidate files and reachable history before Git sends a push. CI repeats the audit on pushes and pull requests.
 
 ## Prepare local data
 
@@ -93,17 +102,35 @@ Runs write generated artifacts beneath `data/artifacts/runs/<run-id>/` and repor
 
 ```powershell
 python -m ruff check PipelinePython/ --config ruff.toml
+python -m ruff format --check PipelinePython/ --config ruff.toml
 python -m pytest PipelinePython/tests/pipeline/ PipelinePython/tests/unit/ --ignore=PipelinePython/tests/pipeline/test_anchors.py --ignore=PipelinePython/tests/pipeline/test_v3_artifact_gates.py -q
 python scripts/audit_public_repo.py --history
 ```
 
-The publication audit checks candidate files and reachable Git history for participant datasets, credential patterns, and notebook outputs. It reports file paths and rule names, never matched secret values.
+CI runs Ruff lint and format checks, the publication audit against candidate files and reachable Git history, and the selected pytest suite. Pytest runs only after lint and publication audit pass. GitHub Actions are pinned to immutable commit SHAs; Dependabot checks Python and Actions dependencies weekly.
+
+## Development workflow (BMAD/SDD and BDD)
+
+For a behavior or data-contract change, read `PRD.md`, `AGENTS.md`, and the relevant spec under `_bmad-output/specs/` first. Agree on observable acceptance behavior, update the relevant spec or decision record, make the smallest implementation change, then run the checks above. Documentation-only or tooling-only changes do not need a new product spec. The publication controls for this repository are specified in [the Public Repository Safety spec](_bmad-output/specs/spec-publication-safety/SPEC.md).
+
+Publication safety acceptance examples:
+
+- **Given** a checkout containing only reviewed source and documentation with participant references in `ID-01`–`ID-32` form, **when** `python scripts/audit_public_repo.py --history` runs, **then** it passes without any physiological records, identity map, or executed notebook output.
+- **Given** a candidate file or reachable commit containing a prohibited data artifact, credential pattern, participant-name field, or notebook output, **when** the same audit runs, **then** it fails with the path and rule category and does not print a matched secret value.
+
+The audit is a repository guard, not proof that pseudonymized biosignal data is anonymous. This repository accepts reviewed source and documentation only; keep raw and cleaned physiological data, identity mappings, anchors, model weights, and participant-level reports outside Git. Participant IDs remain sensitive when linked to physiological data.
+
+This lightweight workflow follows the existing BMAD/spec artifacts in this repository and uses BDD-style observable outcomes. Reference implementations: [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD), [OpenSpec spec-driven workflow](https://github.com/Fission-AI/OpenSpec), and [Cucumber Gherkin reference](https://cucumber.io/docs/gherkin/reference/). No additional workflow runtime is required.
 
 ## Data privacy and publication
 
 This snapshot contains no physiological datasets. Do not commit raw recordings, anchor tables, identity mappings, generated participant-level data, screenshots, model artifacts, or notebook outputs. Clean data still needs an explicit release review; participant IDs are pseudonymous and do not make biosignal data non-sensitive.
 
 Before any push, run `python scripts/audit_public_repo.py --history`. If a dataset is separately approved for release, review its provenance, columns, filenames, and participant IDs before adding it; update the repository audit policy at the same time.
+
+When GitHub enables the feature for this repository, turn on secret scanning and push protection in **Settings → Code security and analysis**. Keep the CI audit required for pull requests as well; server-side scanning and the repository audit cover different failure paths.
+
+See [SECURITY.md](SECURITY.md) for reporting a suspected credential or data exposure.
 
 ## License
 

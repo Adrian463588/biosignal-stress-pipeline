@@ -15,11 +15,15 @@ from scipy.signal import find_peaks
 
 from .features_v4 import extract_ppg_features
 from .peak_detection import PpgPeakDetection, msptd_fast_boundary_safe
+from .preprocessing import SignalFilter
 
 CAPTURE_SCHEMA_VERSION = 2
 FEATURE_ATOL = 1.0e-4
 FEATURE_RTOL = 1.0e-5
 PROBABILITY_ATOL = 1.0e-5
+FILTER_ATOL = 1.0e-5
+SAMPLING_RATE_POLICY = "recording_filter_observed_window_v1"
+VERIFIED_SAMPLING_POLICY_RUN = "20260916T132736Z"
 _SHA256_LENGTH = 64
 
 
@@ -34,6 +38,8 @@ class CapturedLiveSession:
     batch_raw_values_by_channel_timestamp: Mapping[str, Mapping[int, int]]
     batch_ids_by_channel_timestamp: Mapping[str, Mapping[int, str]]
     batch_checksums_by_channel_timestamp: Mapping[str, Mapping[int, str]]
+    recording_rates_by_channel: Mapping[str, float]
+    batch_elapsed_by_channel_timestamp: Mapping[str, Mapping[int, int]]
     window_evidence: tuple[Mapping[str, Any], ...]
 
 
@@ -126,6 +132,8 @@ def load_captured_live_session(capture_directory: Path) -> CapturedLiveSession:
     batch_ids_by_channel: dict[str, dict[int, str]] = {}
     batch_checksums_by_channel: dict[str, dict[int, str]] = {}
     observed_counts: dict[str, int] = {}
+    recording_rates: dict[str, float] = {}
+    elapsed_by_channel: dict[str, dict[int, int]] = {}
     for path in batch_files:
         batch = _read_object(path, "capture_batch_unreadable")
         if batch.get("schemaVersion") != CAPTURE_SCHEMA_VERSION:
@@ -144,6 +152,28 @@ def load_captured_live_session(capture_directory: Path) -> CapturedLiveSession:
         if batch.get("payloadSha256") != watch_payload_sha256(batch):
             raise ValueError("capture_batch_payload_checksum_mismatch")
         channel = _required_string(batch, "channel")
+        rate = float(batch.get("samplingRateHz", 0))
+        if not np.isfinite(rate) or rate <= 0:
+            raise ValueError("capture_recording_rate_invalid")
+        if channel in recording_rates and recording_rates[channel] != rate:
+            raise ValueError("capture_recording_rate_conflict")
+        recording_rates[channel] = rate
+        elapsed_start = int(batch["elapsedStartMillis"])
+        elapsed_end = int(batch["elapsedEndMillis"])
+        if elapsed_start < 0 or elapsed_end < elapsed_start:
+            raise ValueError("capture_batch_elapsed_invalid")
+        if (
+            elapsed_start > 0
+            and elapsed_end - elapsed_start != timestamps[-1] - timestamps[0]
+        ):
+            raise ValueError("capture_batch_elapsed_span_mismatch")
+        channel_elapsed = elapsed_by_channel.setdefault(channel, {})
+        for timestamp in timestamps:
+            channel_elapsed[timestamp] = (
+                elapsed_end
+                if len(timestamps) == 1
+                else elapsed_start + timestamp - timestamps[0]
+            )
         batch_id = _required_string(batch, "batchId")
         payload_checksum = str(batch["payloadSha256"])
         observed_by_channel.setdefault(channel, set()).update(timestamps)
@@ -198,6 +228,8 @@ def load_captured_live_session(capture_directory: Path) -> CapturedLiveSession:
             for channel, values in batch_checksums_by_channel.items()
         },
         window_evidence=evidence,
+        recording_rates_by_channel=recording_rates,
+        batch_elapsed_by_channel_timestamp=elapsed_by_channel,
     )
 
 
@@ -218,12 +250,13 @@ def verify_live_ppg_capture(
     try:
         captured = load_captured_live_session(capture_directory)
         artifacts = _load_run_artifacts(root, run_id)
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+        cleaned = _canonical_cleaned_core(captured, artifacts)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
         return _failed_report(run_id, capture_directory, str(error))
 
     channel_reports: dict[str, list[dict[str, Any]]] = {}
     for evidence in captured.window_evidence:
-        report = _verify_window(evidence, captured, artifacts)
+        report = _verify_window(evidence, captured, artifacts, cleaned)
         channel = str(evidence.get("channel", "unknown"))
         channel_reports.setdefault(channel, []).append(report)
 
@@ -241,21 +274,29 @@ def verify_live_ppg_capture(
         and not missing_channels
         and all(report["status"] == "GO" for report in eligible_reports)
     )
+    replay = captured.manifest.get("verificationExecution") == "REPLAY"
     report: dict[str, Any] = {
-        "schema_version": "live-ppg-parity-v2",
+        "schema_version": "live-ppg-parity-v3",
         "run_id": run_id,
-        "verification_scope": "android_watch_raw_to_feature_windows_against_frozen_run_contract",
+        "verification_scope": "watch_raw_to_canonical_cleaning_features_onnx",
+        "sampling_rate_policy": SAMPLING_RATE_POLICY,
+        "preprocessing_verified": passed,
         "capture_directory": str(captured.capture_directory),
         "capture_manifest_sha256": captured.manifest_sha256,
         "capture_source": "acknowledged_watch_transport",
-        "actual_sensor_acquisition": passed,
-        "sensor_path_parity_status": "GO" if passed else "NO_GO",
+        "verification_execution": "REPLAY" if replay else "ACQUISITION",
+        "processing_apk_sha256": captured.manifest.get("processingApkSha256"),
+        "actual_sensor_acquisition": passed and not replay,
+        "sensor_path_parity_status": ("REPLAY_VERIFIED" if replay else "GO")
+        if passed
+        else "NO_GO",
         "active_channels": active_channels,
         "raw_lineage_verified": passed,
         "missing_active_channels": missing_channels,
         "status": "GO" if passed else "NO_GO",
         "feature_tolerance": {"atol": FEATURE_ATOL, "rtol": FEATURE_RTOL},
         "probability_tolerance": PROBABILITY_ATOL,
+        "filter_tolerance": {"atol": FILTER_ATOL, "rtol": 1.0e-9},
         "channels": {
             channel: {
                 "status": (
@@ -282,6 +323,7 @@ def _verify_window(
     evidence: Mapping[str, Any],
     captured: CapturedLiveSession,
     artifacts: Mapping[str, Mapping[str, Any]],
+    cleaned: Mapping[str, Mapping[int, float]],
 ) -> dict[str, Any]:
     channel = str(evidence.get("channel", "unknown"))
     window_id = str(evidence.get("windowId", "unknown"))
@@ -373,16 +415,38 @@ def _verify_window(
 
     contract = artifact["contract"]
     manifest = artifact["manifest"]
+    # Model-bound Gold records endpoint cadence. The run's Git base differs
+    # from its dirty executable; stored training artifacts decide this policy.
+    rate = (
+        (len(timestamps) - 1) * 1000.0 / max(1, timestamps[-1] - timestamps[0])
+        if timestamps
+        else 0.0
+    )
     _check_trace_contract(trace, contract, manifest, values, reasons)
+    if trace.get("samplingRatePolicy") != SAMPLING_RATE_POLICY:
+        reasons.append("trace_sampling_rate_policy_mismatch")
+    if not _close(
+        trace.get("sourceRateHz"), captured.recording_rates_by_channel[channel], 1.0e-9
+    ):
+        reasons.append("trace_recording_rate_mismatch")
+    if not _close(trace.get("modelRateHz"), rate, 1.0e-9):
+        reasons.append("trace_feature_window_rate_mismatch")
+    expected_values = np.asarray(
+        [cleaned[channel][time] for time in timestamps], dtype=np.float64
+    )
+    if len(values) == len(expected_values) and not np.allclose(
+        values, expected_values, atol=FILTER_ATOL, rtol=1.0e-9
+    ):
+        reasons.append("canonical_filter_mismatch")
     if reasons:
         return _window_report(channel, window_id, reasons=reasons)
 
     try:
-        values_array = np.asarray(values, dtype=np.float64)
-        detection = _detect(values_array, float(contract["model_rate_hz"]), contract)
+        values_array = expected_values
+        detection = _detect(values_array, rate, contract)
         features, _, _ = extract_ppg_features(
             values_array,
-            float(contract["model_rate_hz"]),
+            rate,
             channel=channel,
             detection=detection,
             window_seconds=int(manifest["window_seconds"]),
@@ -392,9 +456,7 @@ def _verify_window(
             [features[name] for name in feature_order], dtype=np.float32
         )
         observed_features = np.asarray(trace["featureValues"], dtype=np.float32)
-        _compare_detector_trace(
-            trace, detection, float(contract["model_rate_hz"]), reasons
-        )
+        _compare_detector_trace(trace, detection, rate, reasons)
         if observed_features.shape != expected_features.shape or not np.allclose(
             observed_features,
             expected_features,
@@ -404,7 +466,7 @@ def _verify_window(
             reasons.append("feature_vector_mismatch")
         if (
             trace.get("featureChecksum")
-            != hashlib.sha256(expected_features.astype("<f4").tobytes()).hexdigest()
+            != hashlib.sha256(observed_features.astype("<f4").tobytes()).hexdigest()
         ):
             reasons.append("feature_checksum_mismatch")
         raw_probability = _onnx_probability(
@@ -431,7 +493,68 @@ def _verify_window(
     )
 
 
+def _canonical_cleaned_core(
+    captured: CapturedLiveSession, artifacts: Mapping[str, Mapping[str, Any]]
+) -> dict[str, dict[int, float]]:
+    """Reconstruct the full observed core, never trust Android filtered values."""
+    output: dict[str, dict[int, float]] = {}
+    for channel, artifact in artifacts.items():
+        windows = [
+            item for item in captured.window_evidence if item.get("channel") == channel
+        ]
+        manifest = artifact["manifest"]
+        duration = int(manifest["window_seconds"])
+        stride = int(manifest["stride_seconds"])
+        expected_windows = (240 - duration) // stride + 1
+        if len(windows) != expected_windows:
+            raise ValueError(f"canonical_core_window_coverage_incomplete:{channel}")
+        window_times = [tuple(_int_list(item, "timestampsMillis")) for item in windows]
+        starts = sorted(times[0] for times in window_times if times)
+        elapsed = captured.batch_elapsed_by_channel_timestamp[channel]
+        observed = captured.batch_raw_values_by_channel_timestamp[channel]
+        timestamps = sorted(
+            time for time in observed if 30_000 <= elapsed[time] < 270_000
+        )
+        if len(starts) != expected_windows or len(timestamps) < 2:
+            raise ValueError(f"canonical_core_timestamps_missing:{channel}")
+        rate = captured.recording_rates_by_channel[channel]
+        interval = 1000.0 / rate
+        if any(
+            abs(right - left - stride * 1000) > 2 * interval
+            for left, right in zip(starts, starts[1:])
+        ):
+            raise ValueError(f"canonical_core_window_stride_mismatch:{channel}")
+        if abs(timestamps[-1] - timestamps[0] - 240_000) > 2 * interval:
+            raise ValueError(f"canonical_core_duration_incomplete:{channel}")
+        if {time for times in window_times for time in times} != set(timestamps):
+            raise ValueError(f"canonical_core_raw_coverage_mismatch:{channel}")
+        for index, times in enumerate(sorted(window_times, key=lambda times: times[0])):
+            start = 30_000 + index * stride * 1000
+            end = start + duration * 1000
+            expected = tuple(
+                time for time in timestamps if start <= elapsed[time] < end
+            )
+            if times != expected:
+                raise ValueError(f"canonical_model_window_selection_mismatch:{channel}")
+        if np.max(np.diff(timestamps)) > 4 * interval:
+            raise ValueError(f"canonical_core_true_gap:{channel}")
+        raw = np.asarray([observed[time] for time in timestamps], dtype=np.float64)
+        filtered = SignalFilter.bandpass(
+            raw,
+            rate,
+            float(manifest["filter_low_cut_hz"]),
+            float(manifest["filter_high_cut_hz"]),
+            int(manifest["filter_order"]),
+        )
+        output[channel] = dict(zip(timestamps, filtered.tolist(), strict=True))
+    return output
+
+
 def _load_run_artifacts(project_root: Path, run_id: str) -> dict[str, dict[str, Any]]:
+    # The dirty run's model-bound Gold was independently checked. Do not
+    # silently apply that sampling policy to a future, unverified training run.
+    if run_id != VERIFIED_SAMPLING_POLICY_RUN:
+        raise ValueError("live_ppg_sampling_policy_not_verified_for_run")
     run_root = project_root / "data" / "artifacts" / "runs" / run_id
     index = _read_object(
         run_root / "export" / "internal" / "internal_model_index.json",
@@ -527,10 +650,21 @@ def _check_trace_contract(
         )
     ):
         reasons.append("trace_contains_derived_or_gap_samples")
-    if not _close(trace.get("sourceRateHz"), float(contract["source_rate_hz"]), 1.0e-9):
+    if not _rate_compatible(
+        trace.get("sourceRateHz"), float(contract["source_rate_hz"])
+    ):
         reasons.append("trace_source_rate_mismatch")
-    if not _close(trace.get("modelRateHz"), float(contract["model_rate_hz"]), 1.0e-9):
+    if not _rate_compatible(trace.get("modelRateHz"), float(contract["model_rate_hz"])):
         reasons.append("trace_model_rate_mismatch")
+
+
+def _rate_compatible(observed: Any, expected: float) -> bool:
+    return (
+        isinstance(observed, (int, float))
+        and np.isfinite(observed)
+        and observed > 0
+        and abs(observed - expected) / expected <= 0.20
+    )
 
 
 def _compare_detector_trace(
@@ -563,7 +697,9 @@ def _detect(
 ) -> PpgPeakDetection:
     method = str(contract["detector_method"])
     if method == "neurokit2_ppg_charlton_msptdfast":
-        detector_rate = int(round(float(contract["detector_sampling_rate_hz"])))
+        detector_rate = round(sampling_rate_hz)
+        if not np.isclose(sampling_rate_hz, detector_rate, rtol=0.01, atol=0.0):
+            raise ValueError("msptd_integer_sampling_rate_required")
         peaks, _ = msptd_fast_boundary_safe(
             values,
             float(detector_rate),
@@ -695,7 +831,8 @@ def _window_report(
 
 def _failed_report(run_id: str, capture_directory: Path, reason: str) -> dict[str, Any]:
     return {
-        "schema_version": "live-ppg-parity-v2",
+        "schema_version": "live-ppg-parity-v3",
+        "preprocessing_verified": False,
         "run_id": run_id,
         "capture_directory": str(capture_directory),
         "actual_sensor_acquisition": False,

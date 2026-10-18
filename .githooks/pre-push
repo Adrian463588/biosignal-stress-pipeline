@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+python scripts/audit_public_repo.py --history

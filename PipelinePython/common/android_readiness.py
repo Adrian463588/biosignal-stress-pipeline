@@ -314,7 +314,7 @@ def _sensor_path_receipt(run_root: Path) -> dict[str, Any]:
 
     try:
         receipt = _read_json(receipt_path)
-        if receipt.get("schema_version") != "live-ppg-parity-v2":
+        if receipt.get("schema_version") != "live-ppg-parity-v3":
             raise RuntimeError("sensor_path_receipt_schema_invalid")
         if receipt.get("run_id") != run_root.name:
             raise RuntimeError("sensor_path_receipt_run_id_mismatch")
@@ -326,6 +326,15 @@ def _sensor_path_receipt(run_root: Path) -> dict[str, Any]:
             raise RuntimeError("sensor_path_receipt_not_actual")
         if receipt.get("raw_lineage_verified") is not True:
             raise RuntimeError("sensor_path_raw_lineage_not_verified")
+        if receipt.get("preprocessing_verified") is not True:
+            raise RuntimeError("sensor_path_preprocessing_not_verified")
+        if (
+            receipt.get("verification_scope")
+            != "watch_raw_to_canonical_cleaning_features_onnx"
+        ):
+            raise RuntimeError("sensor_path_verification_scope_invalid")
+        if receipt.get("sampling_rate_policy") != "recording_filter_observed_window_v1":
+            raise RuntimeError("sensor_path_sampling_rate_policy_invalid")
         active_channels = set(receipt.get("active_channels", []))
         if active_channels != set(RESEARCH_CHANNELS):
             raise RuntimeError("sensor_path_active_channels_incomplete")
@@ -338,7 +347,7 @@ def _sensor_path_receipt(run_root: Path) -> dict[str, Any]:
                 raise RuntimeError(f"sensor_path_channel_result_missing:{channel}")
             if channel_result.get("status") != "GO":
                 raise RuntimeError(f"sensor_path_channel_not_go:{channel}")
-            if int(channel_result.get("window_count", 0)) < 1:
+            if int(channel_result.get("window_count", 0)) != 7:
                 raise RuntimeError(f"sensor_path_channel_window_missing:{channel}")
         return {
             **base,
