@@ -4,6 +4,15 @@ This repository contains the local Python pipeline for ECG/PPG data preparation,
 
 > Research software for decision support. It is not a diagnostic device. This repository snapshot contains code and documentation only; participant recordings, cleaned datasets, identity maps, anchors, run outputs, and model weights are not included.
 
+## Android app downloads
+
+The companion Android application is maintained in the [separate Android repository](https://github.com/Adrian463588/android-stress-detection). Its newest phone build is **0.1.5**, published as an internal debug preview, not a production or Play Store release. The companion Wear APK remains version **0.1.1**.
+
+- [Download phone APK 0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk)
+- [Download Wear APK 0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk)
+- [Release notes and checksums for phone 0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5)
+- [All app release history](https://github.com/Adrian463588/android-stress-detection/releases)
+
 ## Locked research contract
 
 - Use only participants `ID-01` through `ID-32`; participant names and identity mappings must never enter this repository.
