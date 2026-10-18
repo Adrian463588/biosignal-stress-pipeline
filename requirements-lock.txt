@@ -10,7 +10,7 @@ scikit-learn==1.7.2
 lightgbm==4.6.0
 xgboost==2.1.4
 joblib==1.5.2
-optuna==4.6.0
+optuna==5.0.0
 onnx==1.21.0
 onnxruntime==1.23.2
 skl2onnx==1.20.0
